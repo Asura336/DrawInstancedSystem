@@ -16,6 +16,8 @@ namespace Com.Culling
     {
         protected override unsafe void Culling(AABBCullingContext[] dst, Bounds[] src, int count)
         {
+            Vector3 cameraForward = cameraLocalToWorldMatrix.MultiplyVector(Vector3.forward);
+            Vector3 cameraPosition = cameraLocalToWorldMatrix.MultiplyPoint(Vector3.zero);
             // 2000 bounds, 0.07 ms
             var inputBounds = new NativeArray<Bounds>(src, Allocator.TempJob)
                 .Reinterpret<float3x2>();
@@ -27,6 +29,8 @@ namespace Com.Culling
             JobHandle job = new CullingJobFor
             {
                 vpMatrix = vpMatrix,
+                cameraForward = cameraForward,
+                cameraPosition = cameraPosition,
                 bounds = inputBounds,
                 planes = planes.Reinterpret<float4>(),
                 dst = outputCtxArr.Slice(0, count)
@@ -49,6 +53,8 @@ namespace Com.Culling
         struct CullingJobFor : IJobParallelFor
         {
             [ReadOnly] public float4x4 vpMatrix;
+            [ReadOnly] public float3 cameraPosition;
+            [ReadOnly] public float3 cameraForward;
 
             [DeallocateOnJobCompletion]
             [ReadOnly] public NativeArray<float3x2> bounds;
@@ -86,7 +92,7 @@ namespace Com.Culling
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            unsafe float HeightInViewport(in float3 center, in float3 extents)
+            readonly unsafe float HeightInViewport(in float3 center, in float3 extents)
             {
                 float3 bMin = center - extents, bMax = center + extents;
                 float4* ps = stackalloc float4[8];
@@ -100,14 +106,28 @@ namespace Com.Culling
                 ps[6] = float4(bMax.x, bMax.y, bMin.z, 1);
                 ps[7] = float4(bMax.x, bMax.y, bMax.z, 1);
 
-                float maxY = float.MinValue, minY = float.MaxValue;
+                float2 maxXY = float.MinValue, minXY = float.MaxValue;
+                float minDot = 1, maxDot = -1;
                 for (int i = 0; i < 8; i++)
                 {
                     float4 clipPos = mul(vpMatrix, ps[i]);
-                    float temp_viewPosY = 0.5f + 0.5f * clipPos.y / clipPos.w;
-                    minY = min(minY, temp_viewPosY); maxY = max(maxY, temp_viewPosY);
+                    float2 viewPosXY = 0.5f + 0.5f * clipPos.xy / clipPos.w;
+                    minXY = min(minXY, viewPosXY); maxXY = max(maxXY, viewPosXY);
+
+                    float _dot = dot(cameraForward, ps[i].xyz - cameraPosition);
+                    minDot = min(_dot, minDot); maxDot = max(_dot, maxDot);
                 }
-                return maxY - minY;
+                // 如果包围盒顶点有的在视野前方有的在视野后方，认为表面始终靠近相机
+                // 设置高度为 1（最近）
+                if (minDot * maxDot < 0)
+                {
+                    return 1;
+                }
+                else
+                {
+                    float2 delta = maxXY - minXY;
+                    return max(delta.x, delta.y);
+                }
             }
         }
 

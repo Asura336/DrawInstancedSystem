@@ -60,6 +60,7 @@ namespace Com.Culling
 
         protected Camera referenceCamera;
         protected Matrix4x4 vpMatrix;
+        protected Matrix4x4 cameraLocalToWorldMatrix;
         protected readonly Plane[] frustumPlanes = new Plane[6];
 
         protected int capacity;
@@ -87,7 +88,7 @@ namespace Com.Culling
             set
             {
                 referenceCamera = value;
-                Update_VP_Matrix();
+                UpdateMatrix();
             }
         }
 
@@ -156,7 +157,7 @@ namespace Com.Culling
 
         public override void Update()
         {
-            Update_VP_Matrix();
+            UpdateMatrix();
 
             bool rev = revertCtxBufferFrame % 2 != 0;
             AABBCullingContext[] before = rev ? ctx0 : ctx1,
@@ -209,23 +210,28 @@ namespace Com.Culling
             }
         }
 
-        protected virtual void Update_VP_Matrix()
+        protected virtual void UpdateMatrix()
         {
             if (referenceCamera)
             {
                 VpMatrix(ref vpMatrix, referenceCamera);
                 GeometryUtility.CalculateFrustumPlanes(vpMatrix, frustumPlanes);
+                cameraLocalToWorldMatrix = referenceCamera.transform.localToWorldMatrix;
             }
         }
 
         protected virtual unsafe void Culling(AABBCullingContext[] dst, Bounds[] src, int count)
         {
+            Vector3 cameraForward = cameraLocalToWorldMatrix.MultiplyVector(Vector3.forward);
+            Vector3 cameraPosition = cameraLocalToWorldMatrix.MultiplyPoint(Vector3.zero);
             // 2000 bounds, about 7.0 ms
             Vector3* vec8 = stackalloc Vector3[8];
             for (int i = 0; i < count; i++)
             {
                 src[i].GetBoundsVerticesUnsafe(vec8);
+                float maxX = float.MinValue, minX = float.MaxValue;
                 float maxY = float.MinValue, minY = float.MaxValue;
+                float minDot = 1, maxDot = -1;
                 for (int j = 0; j < 8; j++)
                 {
                     Vector4 p = default;
@@ -234,12 +240,22 @@ namespace Com.Culling
                     Vector4 clipPos = default;
                     vpMatrix.Mul(p, ref clipPos);
                     // ???: (clipSpace.xy * 0.5 + clipSpace.w * 0.5) / clipSpace.w
+                    float viewPosX = 0.5f + 0.5f * clipPos.x / clipPos.w;
                     float viewPosY = 0.5f + 0.5f * clipPos.y / clipPos.w;
+                    minX = Min(minX, viewPosX); maxX = Max(maxX, viewPosX);
                     minY = Min(minY, viewPosY); maxY = Max(maxY, viewPosY);
+
+                    float dot = Vector3.Dot(cameraForward, (Vector3)p - cameraPosition);
+                    minDot = Mathf.Min(dot, minDot); maxDot = Mathf.Max(dot, maxDot);
                 }
+                // 如果包围盒顶点有的在视野前方有的在视野后方，认为表面始终靠近相机
+                // 设置高度为 1（最近）
+                float height = (minDot * maxDot < 0)
+                    ? 1
+                    : Mathf.Max(maxX - minX, maxY - minY);
 
                 AABBCullingContext cullingResult = default;
-                cullingResult.height = maxY - minY;
+                cullingResult.height = height;
                 cullingResult.visible = GeometryUtility.TestPlanesAABB(frustumPlanes, src[i]);
                 dst[i] = cullingResult;
             }
