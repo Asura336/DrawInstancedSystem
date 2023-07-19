@@ -1,0 +1,12 @@
+{
+  "name": "com.asurafanclub.drawinstancedsystem",
+  "version": "1.1.0",
+  "displayName": "DrawInstancedSystem",
+  "description": "自定义合批的实例化绘制包装",
+  "unity": "2020.3",
+  "dependencies": {
+    "com.unity.mathematics": "1.2.6",
+    "com.unity.collections": "1.3.1",
+    "com.unity.jobs": "0.51.0-preview.32"
+  }
+}
