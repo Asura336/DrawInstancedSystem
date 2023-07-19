@@ -1,0 +1,103 @@
+// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel CalBase
+#pragma kernel Horizontal
+#pragma kernel Vertical
+#pragma kernel HorizontalSkip0
+#pragma kernel VerticalSkip0
+
+cbuffer Params
+{
+    float4x4 trs;
+    float3 start;
+    float skipWhen;
+    float3 step;
+    uint indexOffs;
+    uint indexCount;
+};
+
+RWStructuredBuffer<float4x4> _Matrices;
+
+// 修改 TRS 矩阵表达位置的部分，返回带有新位置的矩阵
+inline float4x4 ApplyPosition(float4x4 mat, in float3 pos)
+{
+    mat[0][3] = pos.x;
+    mat[1][3] = pos.y;
+    mat[2][3] = pos.z;
+    return mat;
+}
+
+// 基础的计算过程，修改 TRS 矩阵表达位置的部分
+// 计算得到的矩阵写入输出缓冲区的指定位置
+[numthreads(64,1,1)]
+void CalBase (uint3 id : SV_DispatchThreadID)
+{
+    uint index = id.x + indexOffs;
+    if (index >= indexCount) { return; }
+
+    uint i = id.x;
+    float3 _pos = start + step * i;
+
+    _Matrices[index] = ApplyPosition(trs, _pos);
+}
+
+// 计算横向的网格线，根据当前显式层级，跳过上一级网格线的位置
+// 跳过显示的依据从外部传入
+[numthreads(64,1,1)]
+void Horizontal (uint3 id : SV_DispatchThreadID)
+{
+    uint index = id.x + indexOffs;
+    if (index >= indexCount) { return; }
+
+    float4x4 _trs = trs;
+    uint i = id.x;
+    float3 _pos = start + step * i;
+    bool _skip = abs(fmod(_pos.z, skipWhen)) < 0.00001;
+
+    _Matrices[index] = _skip ? 0 : ApplyPosition(trs, _pos);
+}
+
+// 计算纵向的网格线，根据当前显式层级，跳过上一级网格线的位置
+// 跳过显示的依据从外部传入
+[numthreads(64,1,1)]
+void Vertical (uint3 id : SV_DispatchThreadID)
+{
+    uint index = id.x + indexOffs;
+    if (index >= indexCount) { return; }
+
+    float4x4 _trs = trs;
+    uint i = id.x;
+    float3 _pos = start + step * i;
+    bool _skip = abs(fmod(_pos.x, skipWhen)) < 0.00001;
+
+    _Matrices[index] = _skip ? 0 : ApplyPosition(trs, _pos);
+}
+
+// 计算横向的网格线，跳过经过坐标原点的线
+[numthreads(64,1,1)]
+void HorizontalSkip0 (uint3 id : SV_DispatchThreadID)
+{
+    uint index = id.x + indexOffs;
+    if (index >= indexCount) { return; }
+
+    float4x4 _trs = trs;
+    uint i = id.x;
+    float3 _pos = start + step * i;
+    bool _skip = abs(_pos.z) < 0.00001;
+
+    _Matrices[index] = _skip ? 0 : ApplyPosition(trs, _pos);
+}
+
+// 计算横向的网格线，跳过经过坐标原点的线
+[numthreads(64,1,1)]
+void VerticalSkip0 (uint3 id : SV_DispatchThreadID)
+{
+    uint index = id.x + indexOffs;
+    if (index >= indexCount) { return; }
+
+    float4x4 _trs = trs;
+    uint i = id.x;
+    float3 _pos = start + step * i;
+    bool _skip = abs(_pos.x) < 0.00001;
+
+    _Matrices[index] = _skip ? 0 : ApplyPosition(trs, _pos);
+}
