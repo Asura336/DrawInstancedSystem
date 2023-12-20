@@ -11,6 +11,7 @@ namespace Com.Culling
         bool Valid { get; }
         Bounds Volume { get; }
         internal bool VolumeUpdated { get; }
+        Matrix4x4 LocalToWorld { get; }
 
         void DoBecameInvisible();
         void DoBecameVisible();
@@ -39,8 +40,6 @@ namespace Com.Culling
         bool volumeUpdated;
         Transform cachedTransform;
         bool destroyed = false;
-        bool transformUpdatedThisFrame;
-        int getTransformChengedFrame = -1;
 
         protected abstract TGroupKeeper FindGroupKeeper();
 
@@ -51,6 +50,8 @@ namespace Com.Culling
             onBecameInvisible ??= new UnityEvent();
             onVolumeDisabled ??= new UnityEvent();
             lodChanged ??= new UnityEvent<int>();
+
+            index = -1;
         }
 
         protected virtual void OnEnable()
@@ -84,6 +85,11 @@ namespace Com.Culling
             onVolumeDisabled.RemoveAllListeners();
         }
 
+        public override string ToString()
+        {
+            return gameObject ? gameObject.name : base.ToString();
+        }
+
         public int Index
         {
             get => index;
@@ -103,17 +109,16 @@ namespace Com.Culling
                     volumeUpdated = false;
                     return true;
                 }
-                int frame = Time.frameCount;
-                if (frame != getTransformChengedFrame)
-                {
-                    transformUpdatedThisFrame = cachedTransform.hasChanged;
-                    if (transformUpdatedThisFrame)
-                    {
-                        cachedTransform.hasChanged = false;
-                    }
-                    getTransformChengedFrame = frame;
-                }
-                return transformUpdatedThisFrame;
+                return false;
+            }
+        }
+
+        Matrix4x4 IAABBCullingVolume.LocalToWorld
+        {
+            get
+            {
+                var t = cachedTransform ? cachedTransform : (cachedTransform = transform);
+                return t ? t.localToWorldMatrix : Matrix4x4.identity;
             }
         }
 
@@ -162,7 +167,7 @@ namespace Com.Culling
             get => localBounds;
             set
             {
-                Bounds prevB = localBounds;
+                var prevB = localBounds;
                 unsafe
                 {
                     if (!EqualsBounds(&prevB, &value))

@@ -1,6 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
+using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
 using UnityEngine;
+using UnityEngine.Assertions;
 using static Com.Culling.AABBCullingHelper;
 
 namespace Com.Culling
@@ -31,6 +34,7 @@ namespace Com.Culling
         [SerializeField] protected float[] lodLevels;
         [Header("Debug and readonly")]
         [SerializeField] protected List<IAABBCullingVolume> volumeInstances;
+        protected NativeList<Matrix4x4> instancesLocalToWorld;
         protected bool anyModify;
 
         protected bool hasInit = false;
@@ -88,9 +92,13 @@ namespace Com.Culling
                 disposable.Dispose();
             }
             cullingGroup = null;
+            if (instancesLocalToWorld.IsCreated)
+            {
+                instancesLocalToWorld.Dispose();
+            }
         }
 
-        protected virtual void LateUpdate()
+        protected virtual unsafe void LateUpdate()
         {
             if (anyModify)
             {
@@ -100,11 +108,13 @@ namespace Com.Culling
             if (volumeInstances != null)
             {
                 int count = volumeInstances.Count;
-                const int updateSample = 7;
+                const int updateSample = 3;
                 int start = Time.frameCount % updateSample;
+                var pLocalToWorld = (Matrix4x4*)instancesLocalToWorld.GetUnsafePtr();
                 for (int i = start; i < count; i += updateSample)
                 {
-                    if (volumeInstances[i].VolumeUpdated)
+                    if (volumeInstances[i].VolumeUpdated
+                        || !EqualsMatrix4x4(volumeInstances[i].LocalToWorld, pLocalToWorld[i]))
                     {
                         bounds[i] = volumeInstances[i].Volume;
                     }
@@ -116,6 +126,11 @@ namespace Com.Culling
 
         public virtual void Add(IAABBCullingVolume volume)
         {
+            if (volume == null)
+            {
+                throw new ArgumentNullException("volume is Nothing");
+            }
+
             if (!hasInit)
             {
                 AddIfNotInit(volume);
@@ -124,6 +139,11 @@ namespace Com.Culling
 
             volumeInstances ??= new List<IAABBCullingVolume>(defaultBufferLength);
             volumeInstances.Add(volume);
+            if (!instancesLocalToWorld.IsCreated)
+            {
+                instancesLocalToWorld = new NativeList<Matrix4x4>(defaultBufferLength, AllocatorManager.Persistent);
+            }
+            instancesLocalToWorld.Add(volume.LocalToWorld);
             int currentCount = volumeInstances.Count;
             if (currentCount > bounds.Length)
             {
@@ -135,12 +155,15 @@ namespace Com.Culling
             int lastIndex = currentCount - 1;
             bounds[lastIndex] = volume.Volume;
             volume.Index = lastIndex;
-
             anyModify = true;
         }
 
-        public virtual void Remove(IAABBCullingVolume volume)
+        public virtual unsafe void Remove(IAABBCullingVolume volume)
         {
+            if (volume == null)
+            {
+                throw new ArgumentNullException("volume is Nothing");
+            }
             if (!hasInit)
             {
                 RemoveIfNotInit(volume);
@@ -150,14 +173,40 @@ namespace Com.Culling
             {
                 return;
             }
+            if (cullingGroup.Count == 0)
+            {
+                if (Debug.isDebugBuild)
+                {
+                    Debug.LogWarning("尝试移除一个剔除物体，但剔除组是空的。");
+                }
+                goto Finally;
+            }
 
             int removeIndex = volume.Index;
+            if (!ReferenceEquals(volume, volumeInstances[removeIndex]))
+            {
+                if (Debug.isDebugBuild)
+                {
+                    Debug.LogWarning($"{volume}(index = {removeIndex}) != {volumeInstances[removeIndex]}(index = {volume.Index})");
+                }
+                goto Finally;
+            }
             cullingGroup.EraseAt(removeIndex);
 
             int lastIndex = volumeInstances.Count - 1;
-            volumeInstances[removeIndex] = volumeInstances[volumeInstances.Count - 1];
+            Assert.AreEqual(lastIndex, cullingGroup.Count, "lastIndex");
+
+            // erase
+            volumeInstances[removeIndex] = volumeInstances[lastIndex];
             volumeInstances[removeIndex].Index = removeIndex;
             volumeInstances.RemoveAt(lastIndex);
+            instancesLocalToWorld.RemoveAtSwapBack(removeIndex);
+            if (lastIndex == 0)
+            {
+                Assert.IsTrue(volumeInstances.Count == 0, "ins not empty");
+            }
+
+Finally:
             volume.Index = -1;
         }
 
@@ -169,7 +218,7 @@ namespace Com.Culling
             }
 
             int index = eventContext.index;
-            var item = volumeInstances[index];
+            IAABBCullingVolume item = volumeInstances[index];
             if (eventContext.HasBecomeVisible)
             {
                 item.DoBecameVisible();

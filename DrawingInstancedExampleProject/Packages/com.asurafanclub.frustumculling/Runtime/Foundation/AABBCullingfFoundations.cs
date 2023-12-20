@@ -25,6 +25,12 @@ namespace Com.Culling
             height = 1,
             visible = true
         };
+
+        public static readonly AABBCullingContext Invisible = new AABBCullingContext
+        {
+            height = 0,
+            visible = false
+        };
     }
 
     /// <summary>
@@ -44,12 +50,12 @@ namespace Com.Culling
             index = -1,
         };
 
-        public bool IsVisible => (currState & visibleMask) != 0;
-        public bool WasVisible => (prevState & visibleMask) != 0;
-        public bool HasBecomeVisible => IsVisible && !WasVisible;
-        public bool HasBecomeInvisible => !IsVisible && WasVisible;
-        public int PreviousLodLevel => prevState & lodLevelMask;
-        public int CurrentLodLevel => currState & lodLevelMask;
+        public readonly bool IsVisible => (currState & visibleMask) != 0;
+        public readonly bool WasVisible => (prevState & visibleMask) != 0;
+        public readonly bool HasBecomeVisible => IsVisible && !WasVisible;
+        public readonly bool HasBecomeInvisible => !IsVisible && WasVisible;
+        public readonly int PreviousLodLevel => prevState & lodLevelMask;
+        public readonly int CurrentLodLevel => currState & lodLevelMask;
     }
 
     internal static partial class AABBCullingHelper
@@ -109,6 +115,15 @@ namespace Com.Culling
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool EqualsMatrix4x4(in Matrix4x4 lhs,  in Matrix4x4 rhs)
+        {
+            return lhs.m00 == rhs.m00 && lhs.m01 == rhs.m01 && lhs.m02 == rhs.m02 && lhs.m03 == rhs.m03
+                && lhs.m10 == rhs.m10 && lhs.m11 == rhs.m11 && lhs.m12 == rhs.m12 && lhs.m13 == rhs.m13
+                && lhs.m20 == rhs.m20 && lhs.m21 == rhs.m21 && lhs.m22 == rhs.m22 && lhs.m23 == rhs.m23
+                && lhs.m30 == rhs.m30 && lhs.m31 == rhs.m31 && lhs.m32 == rhs.m32 && lhs.m33 == rhs.m33;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static float Min(float a, float b) => a > b ? b : a;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -142,7 +157,7 @@ namespace Com.Culling
             //return new Bounds(Vector3.Lerp(min, max, 0.5f), max - min);
 
 
-            var vector8 = stackalloc Vector3[8];
+            Vector3* vector8 = stackalloc Vector3[8];
             GetBoundsVerticesUnsafe(bounds, vector8);
 
             MinMax3 o = MinMax3.negativeInfinity;
@@ -269,7 +284,7 @@ namespace Com.Culling
              *   Vector3 m_Extents;
              */
 
-            Vector3* pCenter = (Vector3*)boundsHead;
+            var pCenter = (Vector3*)boundsHead;
             Vector3* pExtends = pCenter + 1;
 
             float* pMin = (float*)min;
@@ -298,7 +313,7 @@ namespace Com.Culling
 
             public static readonly MinMax3 negativeInfinity = (Vector3.positiveInfinity, Vector3.negativeInfinity);
 
-            public void Deconstructor(out Vector3 min, out Vector3 max)
+            public readonly void Deconstructor(out Vector3 min, out Vector3 max)
             {
                 min = this.min;
                 max = this.max;
@@ -308,10 +323,10 @@ namespace Com.Culling
             public static unsafe MinMax3 FromBounds(in Bounds* pb)
             {
                 float* boundsHead = (float*)pb;
-                Vector3* pCenter = (Vector3*)boundsHead;
+                var pCenter = (Vector3*)boundsHead;
                 Vector3* pExtends = pCenter + 1;
                 MinMax3 o = default;
-                Vector3* oHead = (Vector3*)&o;
+                var oHead = (Vector3*)&o;
                 __minus3((float*)pCenter, (float*)pExtends, (float*)oHead);
                 __add3((float*)pCenter, (float*)pExtends, (float*)(oHead + 1));
                 return o;
@@ -342,7 +357,7 @@ namespace Com.Culling
 
                 fixed (MinMax3* pSelf = &this)
                 {
-                    Vector3* head = (Vector3*)pSelf;
+                    var head = (Vector3*)pSelf;
                     return MinMaxToBounds(head, head + 1);
                 }
             }
@@ -353,7 +368,7 @@ namespace Com.Culling
                 float* pp = (float*)&p;
                 fixed (MinMax3* pSelf = &this)
                 {
-                    Vector3* head = (Vector3*)pSelf;
+                    var head = (Vector3*)pSelf;
                     float* pMin = (float*)head;
                     float* pMax = (float*)(head + 1);
                     __min3(pMin, pp, pMin);

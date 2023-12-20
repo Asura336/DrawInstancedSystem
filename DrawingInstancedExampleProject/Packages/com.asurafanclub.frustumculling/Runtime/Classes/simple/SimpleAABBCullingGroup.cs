@@ -117,12 +117,14 @@ namespace Com.Culling
             //    after = rev ? ctx1 : ctx0;
             // ctx0 => after
             // ctx1 => before
-            revertCtxBufferFrame = 0;
-            ctx0.Initialize();
+            revertCtxBufferFrame = 1;
             for (int i = 0; i < count; i++)
             {
+                ctx0[i] = AABBCullingContext.Invisible;
                 ctx1[i] = AABBCullingContext.Visible;
             }
+            // 立即检查一次事件？
+            CheckEvent(ctx1, ctx0, bufferCount);
         }
 
         public override void SetLodLevels(float[] lodLevels)
@@ -184,7 +186,7 @@ namespace Com.Culling
         {
             if (index < 0 || index > bufferCount - 1) { return default; }
             bool rev = revertCtxBufferFrame % 2 != 0;
-            AABBCullingContext[] curr = rev ? ctx1 : ctx0;
+            var curr = rev ? ctx1 : ctx0;
             return curr[index];
         }
 
@@ -193,8 +195,8 @@ namespace Com.Culling
             // 2000 times, 0.40 ms
             for (int i = 0; i < count; i++)
             {
-                var prevState = (byte)(HeightToLodLevel(before[i].height, lodLevels) & AABBCullingGroupEvent.lodLevelMask);
-                var currState = (byte)(HeightToLodLevel(after[i].height, lodLevels) & AABBCullingGroupEvent.lodLevelMask);
+                byte prevState = (byte)(HeightToLodLevel(before[i].height, lodLevels) & AABBCullingGroupEvent.lodLevelMask);
+                byte currState = (byte)(HeightToLodLevel(after[i].height, lodLevels) & AABBCullingGroupEvent.lodLevelMask);
 
                 if (!before[i].visible && after[i].visible) { currState |= AABBCullingGroupEvent.visibleMask; }
                 if (before[i].visible && !after[i].visible) { prevState |= AABBCullingGroupEvent.visibleMask; }
@@ -222,10 +224,10 @@ namespace Com.Culling
 
         protected virtual unsafe void Culling(AABBCullingContext[] dst, Bounds[] src, int count)
         {
-            Vector3 cameraForward = cameraLocalToWorldMatrix.MultiplyVector(Vector3.forward);
-            Vector3 cameraPosition = cameraLocalToWorldMatrix.MultiplyPoint(Vector3.zero);
+            var cameraForward = cameraLocalToWorldMatrix.MultiplyVector(Vector3.forward);
+            var cameraPosition = cameraLocalToWorldMatrix.MultiplyPoint(Vector3.zero);
             // 2000 bounds, about 7.0 ms
-            Vector3* vec8 = stackalloc Vector3[8];
+            var vec8 = stackalloc Vector3[8];
             for (int i = 0; i < count; i++)
             {
                 src[i].GetBoundsVerticesUnsafe(vec8);

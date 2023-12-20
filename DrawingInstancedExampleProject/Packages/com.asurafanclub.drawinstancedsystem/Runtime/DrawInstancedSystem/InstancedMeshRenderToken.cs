@@ -13,7 +13,7 @@ namespace Com.Rendering
     public sealed class InstancedMeshRenderToken : MonoBehaviour
     {
         const int defaultBufferSize = 64;
-        const int minBatchSize = 16;
+        const int minBatchSize = 1;
 
         [SerializeField] string dispatcherName;
         [SerializeField] Bounds localBounds;
@@ -41,14 +41,21 @@ namespace Com.Rendering
         bool startMethodCalled = false;
         int m_bacthIndex = -1;
 
-        int getTransformChangedFrame = -1;
-        bool transformChangedValueThisFrame;
-
         private void Awake()
         {
             cachedTransform = transform;
             //batchSize = defaultBufferSize;
             Realloc(ref localOffsets, batchSize);
+
+            // 仅第一次，设置缓冲区内容
+            unsafe
+            {
+                fixed (Matrix4x4* pLocalOffs = localOffsets)
+                {
+                    var identity = Matrix4x4.identity;
+                    UnsafeUtility.MemCpyReplicate(pLocalOffs, &identity, sizeofFloat4x4, localOffsets.Length);
+                }
+            }
         }
 
         private void Start()
@@ -76,13 +83,13 @@ namespace Com.Rendering
              *   m_Center : float3
              *   m_Extents : float3
              */
-            Bounds lb = localBounds;
+            var lb = localBounds;
             float* hExtents = (float*)&lb + 3;
 
             // if Bounds.size != 0:
             if (hExtents[0] != 0 && hExtents[1] != 0 && hExtents[2] != 0)
             {
-                Vector3* vs8 = stackalloc Vector3[8];
+                var vs8 = stackalloc Vector3[8];
                 lb.GetBoundsVerticesUnsafe(vs8);
                 var localToWorld = transform.localToWorldMatrix;
                 for (int i = 0; i < 8; i++)
@@ -123,7 +130,9 @@ namespace Com.Rendering
 
         void Wakeup()
         {
-            batchSize = Mathf.Max(minBatchSize, CeilToPow2(count));
+            batchSize = batchSize < 2
+                ? minBatchSize
+                : Mathf.Max(minBatchSize, CeilToPow2(count));
             // set dirty...
             cachedTransform.hasChanged = true;
             instanceUpdated = true;
@@ -196,10 +205,10 @@ namespace Com.Rendering
         /// </summary>
         public string DispatcherName
         {
-            get => dispatcherName;
+            get => dispatcherName ?? string.Empty;
             set
             {
-                if (!dispatcherName.Equals(value, StringComparison.Ordinal))
+                if (!(dispatcherName ?? string.Empty).Equals(value, StringComparison.Ordinal))
                 {
                     dispatcherName = value;
                 }
@@ -238,6 +247,10 @@ namespace Com.Rendering
         public int Capacity => localOffsets?.Length ?? 0;
 
         public Matrix4x4 LocalToWorld => cachedTransform.localToWorldMatrix;
+        public void GetLocalToWorld(ref Matrix4x4 localToWorld)
+        {
+            localToWorld = cachedTransform.localToWorldMatrix;
+        }
 
         /// <summary>
         /// Same as <see cref="Renderer.forceRenderingOff"/>
@@ -265,7 +278,7 @@ namespace Com.Rendering
             get => localBounds;
             set
             {
-                Bounds prevB = localBounds;
+                var prevB = localBounds;
                 unsafe
                 {
                     if (!EqualsBounds(&prevB, &value))
@@ -313,31 +326,11 @@ namespace Com.Rendering
             }
         }
 
-        internal bool TransformUpdated
-        {
-            get
-            {
-                if (hasDestroyed) { return false; }
-
-                int frame = Time.frameCount;
-                if (frame != getTransformChangedFrame)
-                {
-                    transformChangedValueThisFrame = cachedTransform.hasChanged;
-                    if (transformChangedValueThisFrame)
-                    {
-                        cachedTransform.hasChanged = false;
-                    }
-                    getTransformChangedFrame = frame;
-                }
-                return transformChangedValueThisFrame;
-            }
-        }
-
         internal bool InstanceUpdated
         {
             get
             {
-                var o = instanceUpdated;
+                bool o = instanceUpdated;
                 instanceUpdated = false;
                 return o;
             }
@@ -347,7 +340,7 @@ namespace Com.Rendering
         {
             get
             {
-                var o = materialPropertyUpdated;
+                bool o = materialPropertyUpdated;
                 materialPropertyUpdated = false;
                 return o;
             }

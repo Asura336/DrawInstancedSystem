@@ -24,12 +24,12 @@ namespace Com.Rendering
         /// <returns></returns>
         public static InstancedMeshRenderDispatcher FindInstanceOrNothing(string name)
         {
-            return sharedInstances.TryGetValue(name, out var v) ? v : null;
+            return sharedInstances.TryGetValue(name, out InstancedMeshRenderDispatcher v) ? v : null;
         }
 
         public static void TrimExcess()
         {
-            foreach (var v in sharedInstances.Values)
+            foreach (InstancedMeshRenderDispatcher v in sharedInstances.Values)
             {
                 v.InstanceTrimExcess();
             }
@@ -42,14 +42,14 @@ namespace Com.Rendering
         public static long GetNativeUsedMemory()
         {
             long mem = 0;
-            foreach (var aliveDispatcher in sharedInstances.Values)
+            foreach (InstancedMeshRenderDispatcher aliveDispatcher in sharedInstances.Values)
             {
-                var levels = aliveDispatcher.levels;
+                SystemWithTokens[] levels = aliveDispatcher.levels;
                 int count = levels.Length;
                 for (int i = 0; i < count; i++)
                 {
                     if (levels[i] is null) { continue; }
-                    var sys = levels[i].system;
+                    InstancedMeshRenderSystem sys = levels[i].system;
                     mem += sys.UsedBufferMemory();
                 }
             }
@@ -62,7 +62,7 @@ namespace Com.Rendering
             1, 2, 4, 8, 16, 32, 64, 128,
             256, 512, 1024, 2048, 4096,
         };
-        static int BatchSizeToLevel(int size) => size switch
+        static int BatchSizeToLevel(InstancedMeshRenderToken token) => token.BatchSize switch
         {
             1 => 0,
             2 => 1,
@@ -77,13 +77,13 @@ namespace Com.Rendering
             1024 => 10,
             2048 => 11,
             4096 => 12,
-            _ => DefaultSystemIndex(size)
+            _ => DefaultSystemIndex(token)
         };
-        static int DefaultSystemIndex(int size)
+        static int DefaultSystemIndex(InstancedMeshRenderToken token)
         {
             if (Debug.isDebugBuild)
             {
-                Debug.LogWarning($"size = {size} not power of 2 or out of range");
+                Debug.LogWarning($"[{token.DispatcherName}] size = {token.BatchSize} not power of 2 or out of range");
             }
             return 10;  // 1024
         }
@@ -104,7 +104,7 @@ namespace Com.Rendering
             public TokenInfo(InstancedMeshRenderToken token)
             {
                 savedDispatcher = FindInstanceOrNothing(token.DispatcherName);
-                systemLevel = BatchSizeToLevel(token.BatchSize);
+                systemLevel = BatchSizeToLevel(token);
                 batchIndex = token.BatchIndex;
             }
 
@@ -128,8 +128,8 @@ namespace Com.Rendering
             if (currentAlive)
             {
                 var thisTokenInfo = new TokenInfo(token);
-                var targetDispatcher = thisTokenInfo.savedDispatcher;
-                if (targetDispatcher == null)
+                InstancedMeshRenderDispatcher targetDispatcher = thisTokenInfo.savedDispatcher;
+                if (!targetDispatcher)
                 {
                     throw new MissingReferenceException($"没有找到调度器 \"{token.DispatcherName}\"");
                 }
@@ -149,7 +149,7 @@ namespace Com.Rendering
                 }
 
                 // then add...
-                var systemWithTokens = targetDispatcher.GetSystemAtLevel(thisTokenInfo.systemLevel);
+                SystemWithTokens systemWithTokens = targetDispatcher.GetSystemAtLevel(thisTokenInfo.systemLevel);
                 systemWithTokens.AppendToken(token);
                 WriteToRenderSystem(systemWithTokens.system, token, token.BatchIndex);
 
@@ -185,10 +185,10 @@ namespace Com.Rendering
 
         static void ReleaseToken(TokenInfo savedInfo)
         {
-            var savedDispatcher = savedInfo.savedDispatcher;
+            InstancedMeshRenderDispatcher savedDispatcher = savedInfo.savedDispatcher;
             if (savedDispatcher)
             {
-                var renderSystem = savedDispatcher.levels[savedInfo.systemLevel];
+                SystemWithTokens renderSystem = savedDispatcher.levels[savedInfo.systemLevel];
                 renderSystem.EraseTokenAt(savedInfo.batchIndex);
             }
         }
@@ -198,7 +198,7 @@ namespace Com.Rendering
         [SerializeField] string dispatcherName;
         [SerializeField] Mesh instanceMesh;
         [SerializeField] Material instanceMaterial;
-        [SerializeField] string renderType = "Opaque";
+        [SerializeField] string renderType = null;
         [SerializeField] int defaultRenderSystemCapacity = 64;
         [Header("每个调度器使用固定的阴影和绘制层选项，如果需要变体，实例化额外的预制体")]
         [SerializeField] ShadowCastingMode shadowCastingMode = ShadowCastingMode.On;
@@ -211,6 +211,7 @@ namespace Com.Rendering
 
             public readonly InstancedMeshRenderSystem system;
             public InstancedMeshRenderToken[] savedTokens = new InstancedMeshRenderToken[defaultTokenCapacity];
+            public Matrix4x4[] tokenLocalToWorlds = new Matrix4x4[defaultTokenCapacity];
             public int count = 0;
 
             public float accessTimeSinceStartup = 0;
@@ -223,6 +224,8 @@ namespace Com.Rendering
 
             public void AppendToken(InstancedMeshRenderToken token)
             {
+                if (DisposeValue) { return; }
+
                 Assert.AreEqual(token.BatchSize, system.batchSize);
 
                 int addIndex = system.BatchNumber;
@@ -239,10 +242,13 @@ namespace Com.Rendering
                 }
                 if (system.BatchCapacity > savedTokens.Length)
                 {
-                    Realloc(ref savedTokens, system.BatchCapacity);
+                    int newCapacity = system.BatchCapacity;
+                    Realloc(ref savedTokens, newCapacity);
+                    Realloc(ref tokenLocalToWorlds, newCapacity);
                 }
                 system.BatchNumber = addIndex + 1;
                 savedTokens[count] = token;
+                tokenLocalToWorlds[count] = token.LocalToWorld;
                 token.BatchIndex = addIndex;
                 count++;
 
@@ -251,13 +257,15 @@ namespace Com.Rendering
 
             public void EraseTokenAt(int batchIndex)
             {
+                if (DisposeValue) { return; }
+
                 Assert.AreEqual(system.BatchNumber, count);
                 Assert.IsNotNull(savedTokens[count - 1]);
                 Assert.IsTrue(batchIndex < count);
 
                 //Debug.Log($"move[level = {BatchSizeToLevel(system.batchSize)}]：{batchIndex}/{count}");
 
-                var token = savedTokens[batchIndex];
+                InstancedMeshRenderToken token = savedTokens[batchIndex];
                 int index = token.BatchIndex;
                 Assert.AreEqual(index, batchIndex);
                 system.EraseAt(index);
@@ -266,12 +274,13 @@ namespace Com.Rendering
                 savedTokens[index] = savedTokens[count];
                 savedTokens[index].BatchIndex = index;
                 savedTokens[count] = default;
+                tokenLocalToWorlds[index] = tokenLocalToWorlds[count];
                 token.BatchIndex = -1;
 
                 // 同步全局记录，因为擦除的做法影响了其他元素的顺序
                 if (savedTokens[index] is InstancedMeshRenderToken existToken)
                 {
-                    var record = savedTokenInfos[existToken];
+                    TokenInfo record = savedTokenInfos[existToken];
                     record.batchIndex = index;
                     savedTokenInfos[existToken] = record;
                     existToken.CheckDispatch();
@@ -280,12 +289,51 @@ namespace Com.Rendering
                 accessTimeSinceStartup = Time.realtimeSinceStartup;
             }
 
+            /// <summary>
+            /// 控制持有的<see cref="InstancedMeshRenderToken">绘制实例符号</see>压缩内存，
+            ///再控制持有的<see cref="system">绘制实例系统</see>压缩内存
+            /// </summary>
+            public void TrimExcess()
+            {
+                for (int iToken = count - 1; iToken >= 0; iToken--)
+                {
+                    InstancedMeshRenderToken token = savedTokens[iToken];
+                    token.TrimExcess();
+                    if (token.InstanceUpdated)
+                    {
+                        token.CheckDispatch();
+                    }
+                }
+                system.TrimExcess();
+            }
+
+            /// <summary>
+            /// 轮询期间调用，传递时间戳，如果有一段时间（150s，两分半钟）没有增删对象，压缩内存并刷新访问时间
+            /// </summary>
+            /// <param name="timer"></param>
+            public void TrimExcessOnUpdate()
+            {
+                // 如果有一段时间（150s，两分半钟）没有增删对象，调用一次出让内存
+                const float autoTrimExcessTime = 150;
+
+                float timer = Time.realtimeSinceStartup;
+                if (timer - accessTimeSinceStartup > autoTrimExcessTime)
+                {
+                    TrimExcess();
+                    accessTimeSinceStartup = timer;
+                }
+            }
+
             public void Dispose()
             {
+                DisposeValue = true;
                 system.Dispose();
             }
+
+            public bool DisposeValue { get; private set; }
         }
 
+        public bool Valid { get; private set; }
 
         readonly SystemWithTokens[] levels = new SystemWithTokens[batchSizeLevels.Length];
         SystemWithTokens GetSystemAtLevel(int level)
@@ -293,7 +341,7 @@ namespace Com.Rendering
             if (levels[level] is null)
             {
                 int batchSize = batchSizeLevels[level];
-                var sys = string.IsNullOrEmpty(renderType)
+                InstancedMeshRenderSystem sys = string.IsNullOrEmpty(renderType)
                     ? new InstancedMeshRenderSystem(instanceMesh, instanceMaterial, batchSize)
                     : new InstancedMeshRenderSystem(instanceMesh, instanceMaterial, renderType, batchSize);
                 sys.shadowCastingMode = shadowCastingMode;
@@ -315,7 +363,10 @@ namespace Com.Rendering
                 throw new ArgumentException($"调度器 \"{dispatcherName}\" 名称冲突或者重复注册");
             }
             sharedInstances.Add(dispatcherName, this);
-            DontDestroyOnLoad(gameObject);
+            if (!transform.parent)
+            {
+                DontDestroyOnLoad(gameObject);
+            }
         }
 
         private void OnDestroy()
@@ -324,7 +375,6 @@ namespace Com.Rendering
             for (int i = levels.Length - 1; i >= 0; i--)
             {
                 levels[i]?.Dispose();
-                levels[i] = null;
             }
         }
 
@@ -333,21 +383,27 @@ namespace Com.Rendering
             int sysLen = levels.Length;
             for (int i = 0; i < sysLen; i++)
             {
-                var item = levels[i];
+                SystemWithTokens item = levels[i];
                 if (item != null)
                 {
-                    var system = item.system;
+                    InstancedMeshRenderSystem system = item.system;
+                    Matrix4x4[] tokenLocalToWorlds = item.tokenLocalToWorlds;
                     int count = item.count;
                     for (int ti = 0; ti < count; ti++)
                     {
-                        var token = item.savedTokens[ti];
+                        InstancedMeshRenderToken token = item.savedTokens[ti];
                         //if (token is null) { continue; }
                         int batchIndex = token.BatchIndex;
 
-                        if (token.TransformUpdated)
+                        Matrix4x4 tokenLocalToWorld = default;
+                        token.GetLocalToWorld(ref tokenLocalToWorld);
+                        //var tokenLocalToWorld = token.LocalToWorld;
+                        if (!EqualsMatrix4x4(tokenLocalToWorld, tokenLocalToWorlds[ti]))
                         {
-                            system.WriteBatchLocalToWorldAt(batchIndex, token.LocalToWorld);
+                            tokenLocalToWorlds[ti] = tokenLocalToWorld;
+                            system.WriteBatchLocalToWorldAt(batchIndex, tokenLocalToWorld);
                         }
+
                         // 形状变化的情况在调用 Evaluate() 里处理
                         //if (token.InstanceUpdated)
                         //{
@@ -367,11 +423,7 @@ namespace Com.Rendering
                     system.Update();
 
                     // 如果有一段时间（150s，两分半钟）没有增删对象，调用一次出让内存
-                    const float autoTrimExcessTime = 150;
-                    if (Time.realtimeSinceStartup - item.accessTimeSinceStartup > autoTrimExcessTime)
-                    {
-                        InstanceTrimExcess();
-                    }
+                    item.TrimExcessOnUpdate();
                 }
             }
         }
@@ -387,26 +439,23 @@ namespace Com.Rendering
             // 倒序，也就是先压缩每批次数目更多的缓冲区
             for (int iLevels = levels.Length - 1; iLevels >= 0; iLevels--)
             {
-                var level = levels[iLevels];
-                if (level is null) { continue; }
-                for (int iToken = level.count - 1; iToken >= 0; iToken--)
-                {
-                    var token = level.savedTokens[iToken];
-                    token.TrimExcess();
-                    if (token.InstanceUpdated)
-                    {
-                        token.CheckDispatch();
-                    }
-                }
-                var sys = level.system;
-                int batchNumber = sys.BatchNumber;
-                int batchCapacity = sys.BatchCapacity;
-                if (batchNumber < batchCapacity * 0.9f)
-                {
-                    sys.Setup(Mathf.Max(defaultRenderSystemCapacity, batchNumber));
-                    sys.BatchNumber = batchNumber;
-                }
+                levels[iLevels]?.TrimExcess();
             }
+        }
+
+        public Mesh InstancedMesh => instanceMesh;
+        public Material InstancedMaterial => instanceMaterial;
+
+        public ShadowCastingMode ShadowCastingMode
+        {
+            get => shadowCastingMode;
+            set => shadowCastingMode = value;
+        }
+
+        public bool RecieveShadows
+        {
+            get => recieveShadows;
+            set => recieveShadows = value;
         }
     }
 }

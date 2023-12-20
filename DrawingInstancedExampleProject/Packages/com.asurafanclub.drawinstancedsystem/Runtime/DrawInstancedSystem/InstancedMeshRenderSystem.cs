@@ -87,6 +87,7 @@ namespace Com.Rendering
         private InstancedMeshRenderSystem()
         {
             props = new MaterialPropertyBlock();
+            props.SetFloat("_UniqueID", UnityEngine.Random.value);
         }
 
         public InstancedMeshRenderSystem(Mesh mesh, Material mat, int batchSize) : this()
@@ -97,7 +98,7 @@ namespace Com.Rendering
         }
 
         public InstancedMeshRenderSystem(Mesh mesh, Material mat, string overrideRenderType, int batchSize)
-            :this(mesh, mat, batchSize)
+            : this(mesh, mat, batchSize)
         {
             instandedMaterial.SetOverrideTag("RenderType", overrideRenderType);
         }
@@ -146,7 +147,7 @@ namespace Com.Rendering
 
             if (instanceLocalOffsetDirty || batchLocalToWorldDirty || batchLocalBoundsDirty)
             {
-                NativeArray<float4x4>.ReadOnly batchLocalToWorldReader = batchLocalToWorldBuffer.AsParallelReader();
+                var batchLocalToWorldReader = batchLocalToWorldBuffer.AsParallelReader();
 
                 // 移动了物体，或者有物体改变形状
                 if (batchLocalToWorldDirty || instanceLocalOffsetDirty)
@@ -169,16 +170,16 @@ namespace Com.Rendering
                 // 移动了物体，或者有物体改变包围盒尺寸
                 if (batchLocalToWorldDirty || batchLocalBoundsDirty)
                 {
-                    NativeArray<float3x2> outputMinMax = new NativeArray<float3x2>(batchNumber,
+                    var outputMinMax = new NativeArray<float3x2>(batchNumber,
                         Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
-                    JobHandle job = new TransposeBoundsFor
+                    var job = new TransposeBoundsFor
                     {
                         localToWorld = batchLocalToWorldReader,
                         inputLocalBounds = batchLocalBoundsBuffer.AsParallelReader().Reinterpret<float3x2>(),
                         outputWorldMinMax = outputMinMax
                     }.Schedule(batchNumber, 64, default);
 
-                    NativeArray<float3> vMinMax = new NativeArray<float3>(2,
+                    var vMinMax = new NativeArray<float3>(2,
                         Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
                     vMinMax[0] = float3(float.MaxValue);
                     vMinMax[1] = float3(float.MinValue);
@@ -188,17 +189,17 @@ namespace Com.Rendering
                         minMax2 = vMinMax
                     }.Schedule(batchNumber, job).Complete();
 
-                    float3* pMinMax = (float3*)vMinMax.GetUnsafeReadOnlyPtr();
-                    float3 vmin = pMinMax[0];
-                    float3 vmax = pMinMax[1];
+                    var pMinMax = (float3*)vMinMax.GetUnsafeReadOnlyPtr();
+                    var vmin = pMinMax[0];
+                    var vmax = pMinMax[1];
 
                     outputMinMax.Dispose();
                     vMinMax.Dispose();
 
                     fixed (Bounds* pWorldBounds = &cachedWorldBounds)
                     {
-                        Vector3* pCenter = (Vector3*)pWorldBounds;
-                        Vector3* pExtents = pCenter + 1;
+                        var pCenter = (Vector3*)pWorldBounds;
+                        var pExtents = pCenter + 1;
                         // center = lerp(min, max, 0.5)
                         // extents = max - min
                         Average3((float*)&vmin, (float*)&vmax, (float*)pCenter);
@@ -261,6 +262,16 @@ namespace Com.Rendering
             batchCapacity = capacity;
             batchNumber = capacity;
             instanceNumber = instanceCapacity;
+        }
+
+        public void TrimExcess()
+        {
+            if (batchNumber == 0 && batchCapacity > 1024)
+            {
+                Setup(1024);
+                batchNumber = 0;
+                instanceNumber = 0;
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -355,7 +366,7 @@ namespace Com.Rendering
         public unsafe void WriteBatchLocalToWorldAt(int index, in Matrix4x4 localToWorld)
         {
             var ptr = (Matrix4x4*)batchLocalToWorldBuffer.GetUnsafePtr();
-            var maskPtr = (bool*)batchLocalToWorldDirtyMask.GetUnsafePtr();
+            bool* maskPtr = (bool*)batchLocalToWorldDirtyMask.GetUnsafePtr();
             ptr[index] = localToWorld;
             maskPtr[index] = true;
             batchLocalToWorldDirty = true;
@@ -368,7 +379,7 @@ namespace Com.Rendering
         /// <param name="count"></param>
         public unsafe void WriteBatchCountAt(int index, int count)
         {
-            var ptr = (int*)batchCountBuffer.GetUnsafePtr();
+            int* ptr = (int*)batchCountBuffer.GetUnsafePtr();
             ptr[index] = count;
             batchLocalToWorldDirty = true;
         }
@@ -477,7 +488,7 @@ namespace Com.Rendering
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void Draw(int subMeshIndex)
         {
-            Bounds worldBounds = cachedWorldBounds;
+            var worldBounds = cachedWorldBounds;
             Graphics.DrawMeshInstancedProcedural(instanceMesh,
                 subMeshIndex,
                 instandedMaterial,

@@ -16,8 +16,8 @@ namespace Com.Culling
     {
         protected override unsafe void Culling(AABBCullingContext[] dst, Bounds[] src, int count)
         {
-            Vector3 cameraForward = cameraLocalToWorldMatrix.MultiplyVector(Vector3.forward);
-            Vector3 cameraPosition = cameraLocalToWorldMatrix.MultiplyPoint(Vector3.zero);
+            var cameraForward = cameraLocalToWorldMatrix.MultiplyVector(Vector3.forward);
+            var cameraPosition = cameraLocalToWorldMatrix.MultiplyPoint(Vector3.zero);
             // 2000 bounds, 0.07 ms
             var inputBounds = new NativeArray<Bounds>(src, Allocator.TempJob)
                 .Reinterpret<float3x2>();
@@ -25,13 +25,13 @@ namespace Com.Culling
                 Allocator.TempJob,
                 NativeArrayOptions.UninitializedMemory);
             var planes = new NativeArray<Plane>(frustumPlanes, Allocator.TempJob);
-
-            JobHandle job = new CullingJobFor
+            var job = new CullingJobFor
             {
                 vpMatrix = vpMatrix,
                 cameraForward = cameraForward,
                 cameraPosition = cameraPosition,
                 bounds = inputBounds,
+                orthographic = referenceCamera.orthographic,
                 planes = planes.Reinterpret<float4>(),
                 dst = outputCtxArr.Slice(0, count)
             }.Schedule(count, 64, default);
@@ -55,6 +55,7 @@ namespace Com.Culling
             [ReadOnly] public float4x4 vpMatrix;
             [ReadOnly] public float3 cameraPosition;
             [ReadOnly] public float3 cameraForward;
+            [ReadOnly] public bool orthographic;
 
             [DeallocateOnJobCompletion]
             [ReadOnly] public NativeArray<float3x2> bounds;
@@ -80,9 +81,9 @@ namespace Com.Culling
                 int count = planes.Length;
                 for (int i = 0; i < count; i++)
                 {
-                    float3 normal = planes[i].xyz;
+                    var normal = planes[i].xyz;
                     float distance = planes[i].w;
-                    float3 testPoint = center + extents * sign(normal);
+                    var testPoint = center + extents * sign(normal);
                     if (dot(normal, testPoint) + distance < -1e-10f)
                     {
                         return false;
@@ -95,7 +96,7 @@ namespace Com.Culling
             readonly unsafe float HeightInViewport(in float3 center, in float3 extents)
             {
                 float3 bMin = center - extents, bMax = center + extents;
-                float4* ps = stackalloc float4[8];
+                var ps = stackalloc float4[8];
                 // world pos
                 ps[0] = float4(bMin.x, bMin.y, bMin.z, 1);
                 ps[1] = float4(bMin.x, bMin.y, bMax.z, 1);
@@ -107,27 +108,41 @@ namespace Com.Culling
                 ps[7] = float4(bMax.x, bMax.y, bMax.z, 1);
 
                 float2 maxXY = float.MinValue, minXY = float.MaxValue;
-                float minDot = 1, maxDot = -1;
+                float maxZ = float.MinValue, minZ = float.MaxValue;
                 for (int i = 0; i < 8; i++)
                 {
-                    float4 clipPos = mul(vpMatrix, ps[i]);
-                    float2 viewPosXY = 0.5f + 0.5f * clipPos.xy / clipPos.w;
-                    minXY = min(minXY, viewPosXY); maxXY = max(maxXY, viewPosXY);
-
-                    float _dot = dot(cameraForward, ps[i].xyz - cameraPosition);
-                    minDot = min(_dot, minDot); maxDot = max(_dot, maxDot);
+                    var screenPos = WorldToViewportPoint(ps[i]);
+                    var screenPos_xy = screenPos.xy;
+                    maxXY = max(maxXY, screenPos_xy);
+                    maxZ = max(maxZ, screenPos.z);
+                    minXY = min(minXY, screenPos_xy);
+                    minZ = min(minZ, screenPos.z);
                 }
-                // 如果包围盒顶点有的在视野前方有的在视野后方，认为表面始终靠近相机
-                // 设置高度为 1（最近）
-                if (minDot * maxDot < 0)
+                if (maxZ * minZ < 0)
                 {
+                    // 如果包围盒顶点有的在视野前方有的在视野后方，认为表面始终靠近相机
+                    // 设置高度为 1（最近）
                     return 1;
                 }
                 else
                 {
-                    float2 delta = maxXY - minXY;
+                    // 改进的 LOD 尺寸，以横纵向高度的最大值为依据
+                    var delta = maxXY - minXY;
                     return max(delta.x, delta.y);
                 }
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            readonly float3 WorldToViewportPoint(in float4 pos)
+            {
+                var clipPos = mul(vpMatrix, pos);
+                var clipPos_xy = clipPos.xy;
+                if (!orthographic)
+                {
+                    clipPos_xy /= clipPos.w;
+                }
+                var viewportPos = float3(clipPos_xy * 0.5f + 0.5f, clipPos.z);
+                return viewportPos;
             }
         }
 
@@ -138,7 +153,7 @@ namespace Com.Culling
             var prevStates = new NativeArray<byte>(count, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
             var currStates = new NativeArray<byte>(count, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
             var lods = lodLevels is null ? default : new NativeArray<float>(lodLevels, Allocator.TempJob);
-            JobHandle job = new CheckEventJobFor
+            var job = new CheckEventJobFor
             {
                 prevCtxs = prevCtx,
                 currCtxs = afterCtx,

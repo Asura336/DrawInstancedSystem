@@ -1,6 +1,6 @@
 {
   "name": "com.asurafanclub.frustrumculling",
-  "version": "1.0.2",
+  "version": "1.0.5",
   "displayName": "FrustrumCulling",
   "description": "视口空间下的视锥体剔除方案",
   "unity": "2020.3",

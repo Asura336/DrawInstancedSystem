@@ -1,6 +1,6 @@
 {
   "name": "com.asurafanclub.drawinstancedsystem",
-  "version": "1.1.0",
+  "version": "1.5.5",
   "displayName": "DrawInstancedSystem",
   "description": "自定义合批的实例化绘制包装",
   "unity": "2020.3",

@@ -23,7 +23,7 @@ namespace Com.Rendering
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static unsafe void SetData<T>(ComputeBuffer dst, NativeArray<T> src, int length, int sizeT) where T : unmanaged
         {
-            var dstHandle = dst.BeginWrite<T>(0, length);
+            NativeArray<T> dstHandle = dst.BeginWrite<T>(0, length);
             UnsafeUtility.MemCpy(dstHandle.GetUnsafePtr(), src.GetUnsafeReadOnlyPtr(), length * sizeT);
             dst.EndWrite<T>(length);
         }
@@ -50,14 +50,14 @@ namespace Com.Rendering
         public static unsafe void Erase<T>(NativeList<T> buffer, int index, int last) where T : unmanaged
         {
             //buffer[index] = buffer[last];
-            T* ptr = (T*)buffer.GetUnsafePtr();
+            var ptr = (T*)buffer.GetUnsafePtr();
             ptr[index] = ptr[last];
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static unsafe long UsedMemory<T>(NativeList<T> list) where T : unmanaged
         {
-            return list.IsCreated ? 0 : sizeof(T) * list.Capacity;
+            return list.IsCreated ? sizeof(T) * list.Capacity : 0;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -97,6 +97,15 @@ namespace Com.Rendering
             float num4 = lhs.a - rhs.a;
             float num5 = num * num + num2 * num2 + num3 * num3 + num4 * num4;
             return num5 < 9.99999944E-11f;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static unsafe bool EqualsMatrix4x4(in Matrix4x4 lhs, in Matrix4x4 rhs)
+        {
+            return lhs.m00 == rhs.m00 && lhs.m01 == rhs.m01 && lhs.m02 == rhs.m02 && lhs.m03 == rhs.m03
+                && lhs.m10 == rhs.m10 && lhs.m11 == rhs.m11 && lhs.m12 == rhs.m12 && lhs.m13 == rhs.m13
+                && lhs.m20 == rhs.m20 && lhs.m21 == rhs.m21 && lhs.m22 == rhs.m22 && lhs.m23 == rhs.m23
+                && lhs.m30 == rhs.m30 && lhs.m31 == rhs.m31 && lhs.m32 == rhs.m32 && lhs.m33 == rhs.m33;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
