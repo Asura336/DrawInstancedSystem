@@ -68,6 +68,8 @@ namespace Com.Rendering
         /// </summary>
         NativeList<float4> instanceColorsBuffer;
 
+        bool _disposed;
+
         bool instanceLocalOffsetDirty;
         bool instanceColorDirty;
         bool batchLocalToWorldDirty;
@@ -103,8 +105,28 @@ namespace Com.Rendering
             instandedMaterial.SetOverrideTag("RenderType", overrideRenderType);
         }
 
+        ~InstancedMeshRenderSystem()
+        {
+            Dispose(false);
+        }
+
         public void Dispose()
         {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        void Dispose(bool disposing)
+        {
+            if (_disposed) { return; }
+            if (disposing)
+            {
+                // managed
+                batchNumber = 0;
+                instanceNumber = 0;
+            }
+
+            // unmanaged
             matricesBuffer?.Dispose();
             matricesBuffer = null;
             colorsBuffer?.Dispose();
@@ -119,6 +141,8 @@ namespace Com.Rendering
             release(instanceTrsBuffer);
             release(batchLocalBoundsBuffer);
             release(instanceColorsBuffer);
+
+            _disposed = true;
 
             static void release<T>(NativeList<T> list) where T : unmanaged
             {
