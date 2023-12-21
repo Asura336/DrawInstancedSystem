@@ -257,6 +257,8 @@ namespace Com.Rendering
         /// <param name="capacity"></param>
         public void Setup(int capacity)
         {
+            if (_disposed) { return; }
+
             int instanceCapacity = capacity * batchSize;
             if (capacity != batchCapacity)
             {

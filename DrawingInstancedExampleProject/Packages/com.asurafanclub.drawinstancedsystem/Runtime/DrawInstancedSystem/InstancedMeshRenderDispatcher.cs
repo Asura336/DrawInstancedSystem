@@ -24,12 +24,12 @@ namespace Com.Rendering
         /// <returns></returns>
         public static InstancedMeshRenderDispatcher FindInstanceOrNothing(string name)
         {
-            return sharedInstances.TryGetValue(name, out InstancedMeshRenderDispatcher v) ? v : null;
+            return sharedInstances.TryGetValue(name, out var v) ? v : null;
         }
 
         public static void TrimExcess()
         {
-            foreach (InstancedMeshRenderDispatcher v in sharedInstances.Values)
+            foreach (var v in sharedInstances.Values)
             {
                 v.InstanceTrimExcess();
             }
@@ -42,14 +42,14 @@ namespace Com.Rendering
         public static long GetNativeUsedMemory()
         {
             long mem = 0;
-            foreach (InstancedMeshRenderDispatcher aliveDispatcher in sharedInstances.Values)
+            foreach (var aliveDispatcher in sharedInstances.Values)
             {
-                SystemWithTokens[] levels = aliveDispatcher.levels;
+                var levels = aliveDispatcher.levels;
                 int count = levels.Length;
                 for (int i = 0; i < count; i++)
                 {
                     if (levels[i] is null) { continue; }
-                    InstancedMeshRenderSystem sys = levels[i].system;
+                    var sys = levels[i].system;
                     mem += sys.UsedBufferMemory();
                 }
             }
@@ -123,12 +123,12 @@ namespace Com.Rendering
         /// <param name="token"></param>
         public static void Evaluate(InstancedMeshRenderToken token)
         {
-            bool exist = savedTokenInfos.TryGetValue(token, out TokenInfo savedInfo);
+            bool exist = savedTokenInfos.TryGetValue(token, out var savedInfo);
             bool currentAlive = token && !token.forceRenderingOff && token.enabled && token.gameObject.activeInHierarchy;
             if (currentAlive)
             {
                 var thisTokenInfo = new TokenInfo(token);
-                InstancedMeshRenderDispatcher targetDispatcher = thisTokenInfo.savedDispatcher;
+                var targetDispatcher = thisTokenInfo.savedDispatcher;
                 if (!targetDispatcher)
                 {
                     throw new MissingReferenceException($"没有找到调度器 \"{token.DispatcherName}\"");
@@ -149,7 +149,7 @@ namespace Com.Rendering
                 }
 
                 // then add...
-                SystemWithTokens systemWithTokens = targetDispatcher.GetSystemAtLevel(thisTokenInfo.systemLevel);
+                var systemWithTokens = targetDispatcher.GetSystemAtLevel(thisTokenInfo.systemLevel);
                 systemWithTokens.AppendToken(token);
                 WriteToRenderSystem(systemWithTokens.system, token, token.BatchIndex);
 
@@ -185,10 +185,10 @@ namespace Com.Rendering
 
         static void ReleaseToken(TokenInfo savedInfo)
         {
-            InstancedMeshRenderDispatcher savedDispatcher = savedInfo.savedDispatcher;
+            var savedDispatcher = savedInfo.savedDispatcher;
             if (savedDispatcher)
             {
-                SystemWithTokens renderSystem = savedDispatcher.levels[savedInfo.systemLevel];
+                var renderSystem = savedDispatcher.levels[savedInfo.systemLevel];
                 renderSystem.EraseTokenAt(savedInfo.batchIndex);
             }
         }
@@ -205,7 +205,7 @@ namespace Com.Rendering
         [SerializeField] bool recieveShadows = true;
         [SerializeField] int layer = 0;
 
-        class SystemWithTokens : IDisposable
+        sealed class SystemWithTokens : IDisposable
         {
             const int defaultTokenCapacity = 1024;
 
@@ -220,6 +220,10 @@ namespace Com.Rendering
             {
                 this.system = system;
                 accessTimeSinceStartup = Time.realtimeSinceStartup;
+            }
+            ~SystemWithTokens()
+            {
+                Dispose(false);
             }
 
             public void AppendToken(InstancedMeshRenderToken token)
@@ -265,7 +269,7 @@ namespace Com.Rendering
 
                 //Debug.Log($"move[level = {BatchSizeToLevel(system.batchSize)}]：{batchIndex}/{count}");
 
-                InstancedMeshRenderToken token = savedTokens[batchIndex];
+                var token = savedTokens[batchIndex];
                 int index = token.BatchIndex;
                 Assert.AreEqual(index, batchIndex);
                 system.EraseAt(index);
@@ -280,7 +284,7 @@ namespace Com.Rendering
                 // 同步全局记录，因为擦除的做法影响了其他元素的顺序
                 if (savedTokens[index] is InstancedMeshRenderToken existToken)
                 {
-                    TokenInfo record = savedTokenInfos[existToken];
+                    var record = savedTokenInfos[existToken];
                     record.batchIndex = index;
                     savedTokenInfos[existToken] = record;
                     existToken.CheckDispatch();
@@ -297,7 +301,7 @@ namespace Com.Rendering
             {
                 for (int iToken = count - 1; iToken >= 0; iToken--)
                 {
-                    InstancedMeshRenderToken token = savedTokens[iToken];
+                    var token = savedTokens[iToken];
                     token.TrimExcess();
                     if (token.InstanceUpdated)
                     {
@@ -326,8 +330,20 @@ namespace Com.Rendering
 
             public void Dispose()
             {
-                DisposeValue = true;
+                Dispose(true);
+                GC.SuppressFinalize(this);
+            }
+            void Dispose(bool disposing)
+            {
+                if (DisposeValue) { return; }
+
+                if (disposing)
+                {
+                    savedTokens = null;
+                    tokenLocalToWorlds = null;
+                }
                 system.Dispose();
+                DisposeValue = true;
             }
 
             public bool DisposeValue { get; private set; }
@@ -341,7 +357,7 @@ namespace Com.Rendering
             if (levels[level] is null)
             {
                 int batchSize = batchSizeLevels[level];
-                InstancedMeshRenderSystem sys = string.IsNullOrEmpty(renderType)
+                var sys = string.IsNullOrEmpty(renderType)
                     ? new InstancedMeshRenderSystem(instanceMesh, instanceMaterial, batchSize)
                     : new InstancedMeshRenderSystem(instanceMesh, instanceMaterial, renderType, batchSize);
                 sys.shadowCastingMode = shadowCastingMode;
@@ -383,15 +399,15 @@ namespace Com.Rendering
             int sysLen = levels.Length;
             for (int i = 0; i < sysLen; i++)
             {
-                SystemWithTokens item = levels[i];
+                var item = levels[i];
                 if (item != null)
                 {
-                    InstancedMeshRenderSystem system = item.system;
-                    Matrix4x4[] tokenLocalToWorlds = item.tokenLocalToWorlds;
+                    var system = item.system;
+                    var tokenLocalToWorlds = item.tokenLocalToWorlds;
                     int count = item.count;
                     for (int ti = 0; ti < count; ti++)
                     {
-                        InstancedMeshRenderToken token = item.savedTokens[ti];
+                        var token = item.savedTokens[ti];
                         //if (token is null) { continue; }
                         int batchIndex = token.BatchIndex;
 
