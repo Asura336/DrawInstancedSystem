@@ -96,7 +96,7 @@ namespace Com.Culling
             set => index = value;
         }
 
-        public bool Valid => index != -1;
+        public bool Valid => !destroyed && index != -1;
 
 
         bool IAABBCullingVolume.VolumeUpdated
@@ -157,7 +157,15 @@ namespace Com.Culling
         /// <summary>
         /// 当前世界空间下的轴对齐包围盒
         /// </summary>
-        public Bounds Volume => localBounds.Mul(cachedTransform.localToWorldMatrix);
+        public Bounds Volume
+        {
+            get
+            {
+                var b = default(Bounds);
+                localBounds.Mul(cachedTransform.localToWorldMatrix, ref b);
+                return b;
+            }
+        }
 
         /// <summary>
         /// 本地空间下的轴对齐包围盒
