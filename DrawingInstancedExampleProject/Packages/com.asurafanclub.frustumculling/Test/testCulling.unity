@@ -216,6 +216,7 @@ MonoBehaviour:
   Z: 20
   start: {x: 0, y: 0, z: 0}
   offset: {x: 2, y: 1, z: 2}
+  euler: {x: 0, y: 0, z: 0}
   instances: []
 --- !u!4 &269452051
 Transform:
@@ -250,7 +251,8 @@ MonoBehaviour:
   Y: 5
   Z: 20
   start: {x: 0, y: 0, z: 0}
-  offset: {x: 2, y: 1, z: 2}
+  offset: {x: 6, y: 2, z: 2}
+  euler: {x: 0, y: 90, z: 0}
   instances: []
 --- !u!114 &269452053
 MonoBehaviour:
@@ -272,6 +274,7 @@ MonoBehaviour:
   Z: 20
   start: {x: 0, y: 0, z: 0}
   offset: {x: 2, y: 1, z: 2}
+  euler: {x: 0, y: 0, z: 0}
   instances: []
 --- !u!1 &1005635633
 GameObject:
@@ -300,7 +303,7 @@ MonoBehaviour:
   m_GameObject: {fileID: 1005635633}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 7508e1a38419f574cbfaa163cf7765e9, type: 3}
+  m_Script: {fileID: 11500000, guid: ec715fe89c3c1b6429494d1e5dc72693, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
 --- !u!114 &1005635635
@@ -312,7 +315,7 @@ MonoBehaviour:
   m_GameObject: {fileID: 1005635633}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: d2fd0b3ee3de3594991c83b1521c9564, type: 3}
+  m_Script: {fileID: 11500000, guid: 417f5a9e81e8ac546be1dd1091e3b824, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
   m_cameras:

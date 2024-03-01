@@ -12,6 +12,7 @@ namespace Com.Culling.Test
         [SerializeField] int Z = 20;
         [SerializeField] Vector3 start = new Vector3(0, 0, 0);
         [SerializeField] Vector3 offset = new Vector3(2, 1, 2);
+        [SerializeField] Vector3 euler = Vector3.zero;
         public GameObject[] instances;
 
         private void Start()
@@ -23,6 +24,7 @@ namespace Com.Culling.Test
         {
             var instances = new GameObject[X * Y * Z];
 
+            var localRotation = Quaternion.Euler(euler);
             int index = 0;
             for (int x = 0; x < X; x++)
             {
@@ -36,6 +38,7 @@ namespace Com.Culling.Test
                         var t = o.transform;
                         t.SetParent(transform);
                         t.localPosition = start + new Vector3(offset.x * x, offset.y * y, offset.z * z);
+                        t.localRotation = localRotation;
                         instances[index] = o;
                         index++;
                     }

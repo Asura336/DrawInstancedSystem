@@ -10,7 +10,7 @@ namespace Com.Culling.Test
         private void Awake()
         {
             volume = GetComponent<JobsAABBCullingVolume>();
-            m_renderer = GetComponent<Renderer>();
+            m_renderer = GetComponentInChildren<Renderer>();
 
             volume.onBecameVisible.AddListener(Volume_onBecameVisible);
             volume.onBecameInvisible.AddListener(Volume_onBecameInvisible);
